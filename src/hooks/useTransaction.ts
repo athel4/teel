@@ -47,14 +47,16 @@ export const useTransaction = () => {
         throw new Error('Insufficient token balance');
       }
 
-      // Estimate gas
+      // Estimate gas and determine pricing method
       const gasEstimate = await contract.transfer.estimateGas(formData.recipient, amountToSend);
-      const gasPrice = await provider.getFeeData();
       
-      // Send transaction with gas settings
+      // Always use legacy gas pricing for actual transactions (Sepolia compatibility)
+      const legacyGasPrice = await provider.send('eth_gasPrice', []);
+      
+      // Send transaction with legacy gas settings
       const tx = await contract.transfer(formData.recipient, amountToSend, {
         gasLimit: gasEstimate * BigInt(120) / BigInt(100), // Add 20% buffer
-        gasPrice: gasPrice.gasPrice
+        gasPrice: BigInt(legacyGasPrice)
       });
       
       // Wait for confirmation
@@ -90,12 +92,21 @@ export const useTransaction = () => {
       const amountToSend = ethers.parseUnits(formData.amount, decimals);
       
       const gasEstimate = await contract.transfer.estimateGas(formData.recipient, amountToSend);
-      const gasPrice = await provider.getFeeData();
+      
+      // Get legacy gas estimate (always works)
+      const legacyGasPrice = await provider.send('eth_gasPrice', []);
+      const legacyEstimate = {
+        gasLimit: gasEstimate,
+        gasPrice: BigInt(legacyGasPrice),
+        totalCost: gasEstimate * BigInt(legacyGasPrice)
+      };
+      
+      // Skip EIP-1559 for Sepolia (not supported)
+      let eip1559Estimate = null;
       
       return {
-        gasLimit: gasEstimate,
-        gasPrice: gasPrice.gasPrice || BigInt(0),
-        totalCost: gasEstimate * (gasPrice.gasPrice || BigInt(0))
+        legacy: legacyEstimate,
+        eip1559: eip1559Estimate
       };
     });
   };

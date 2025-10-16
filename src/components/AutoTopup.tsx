@@ -10,7 +10,7 @@ interface AutoTopupProps {
 
 export const AutoTopup: React.FC<AutoTopupProps> = ({ ethBalance, onBalanceUpdate }) => {
   const { address, provider } = useWallet();
-  const { requestFromFaucet, requesting, canRequest, getTreasuryInfo } = useFaucet();
+  const { requestFromFaucet, requesting, canRequest, getTreasuryInfo, requestERC20Tokens, requestingTokens } = useFaucet();
   const [treasuryInfo, setTreasuryInfo] = React.useState<any>(null);
 
   React.useEffect(() => {
@@ -42,10 +42,44 @@ export const AutoTopup: React.FC<AutoTopupProps> = ({ ethBalance, onBalanceUpdat
     }
   };
 
+  const handleTokenTopup = async () => {
+    if (!address || !provider) return;
+
+    try {
+      const result = await requestERC20Tokens(address, provider);
+      
+      if (result?.success) {
+        const successCount = result.results.filter((r: any) => r.success).length;
+        const totalCount = result.results.length;
+        
+        toast.success(`🪙 Token faucet completed: ${successCount}/${totalCount} tokens acquired!`);
+        
+        // Show individual results
+        result.results.forEach((r: any) => {
+          if (r.success) {
+            if (r.hash) {
+              toast.success(`✅ ${r.token}: ${r.amount || 'Success'} (${r.hash.slice(0, 8)}...)`);
+            } else {
+              toast.success(`✅ ${r.token}: Requested from ${r.faucet || 'faucet'}`);
+            }
+          } else {
+            toast.error(`❌ ${r.token}: ${r.error}`);
+          }
+        });
+        
+        // Refresh balances after a delay
+        setTimeout(onBalanceUpdate, 5000);
+      }
+    } catch (error: any) {
+      toast.error(`Token faucet failed: ${error.message}`);
+    }
+  };
+
   const needsTopup = parseFloat(ethBalance) < 0.01;
   const isLowBalance = parseFloat(ethBalance) < 0.05;
 
-  if (!needsTopup && !isLowBalance) return null;
+  // Always show the component
+  // if (!needsTopup && !isLowBalance) return null;
 
   return (
     <div className={`rounded-lg p-4 mb-6 ${needsTopup ? 'bg-red-50 border border-red-200' : 'bg-yellow-50 border border-yellow-200'}`}>
@@ -71,6 +105,14 @@ export const AutoTopup: React.FC<AutoTopupProps> = ({ ethBalance, onBalanceUpdat
             }`}
           >
             {requesting ? '🔄 Requesting...' : '💰 Get Free ETH'}
+          </button>
+          
+          <button
+            onClick={handleTokenTopup}
+            disabled={requestingTokens || !provider}
+            className="px-3 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400"
+          >
+            {requestingTokens ? '🔄 Getting...' : '🪙 Get Tokens'}
           </button>
           
           <a

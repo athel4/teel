@@ -27,34 +27,33 @@ export const SendTokenForm: React.FC = () => {
   const { isWrongNetwork } = useNetwork();
   const [transactions, setTransactions] = useLocalStorage<any[]>('transaction_history', []);
 
-  // Auto-estimate gas when form is valid
-  useEffect(() => {
-    const estimateGasForTransaction = async () => {
-      if (!provider || !formData.recipient || !formData.amount || isWrongNetwork) {
-        setGasEstimate(null);
-        return;
-      }
+  // Gas estimation only when user focuses out of inputs
+  const handleEstimateGas = async () => {
+    if (!provider || !formData.recipient || !formData.amount || isWrongNetwork) {
+      setGasEstimate(null);
+      return;
+    }
 
-      const validation = sendTokenSchema.safeParse(formData);
-      if (!validation.success) {
-        setGasEstimate(null);
-        return;
-      }
+    const validation = sendTokenSchema.safeParse(formData);
+    if (!validation.success) {
+      setGasEstimate(null);
+      return;
+    }
 
-      setEstimating(true);
-      try {
-        const estimate = await estimateGas(formData, provider);
-        setGasEstimate(estimate);
-      } catch (error) {
-        setGasEstimate(null);
-      } finally {
-        setEstimating(false);
-      }
-    };
+    setEstimating(true);
+    try {
+      const estimate = await estimateGas(formData, provider);
+      setGasEstimate(estimate);
+    } catch (error) {
+      setGasEstimate(null);
+    } finally {
+      setEstimating(false);
+    }
+  };
 
-    const debounce = setTimeout(estimateGasForTransaction, 500);
-    return () => clearTimeout(debounce);
-  }, [formData, provider, estimateGas, isWrongNetwork]);
+  const handleInputBlur = () => {
+    handleEstimateGas();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,19 +80,23 @@ export const SendTokenForm: React.FC = () => {
   };
 
   React.useEffect(() => {
-    if (transaction.status === 'success') {
-      toast.success(`Transaction successful! Hash: ${transaction.hash?.slice(0, 10)}...`);
+    if (transaction.status === 'success' && transaction.hash) {
+      toast.success(`Transaction successful! Hash: ${transaction.hash.slice(0, 10)}...`);
       
-      // Log transaction to history
+      // Log transaction to history (only once)
       const newTx = {
-        hash: transaction.hash!,
+        hash: transaction.hash,
         to: formData.recipient,
         amount: formData.amount,
         token: formData.token,
         timestamp: Date.now(),
         status: 'success' as const
       };
-      setTransactions(prev => [newTx, ...prev]);
+      setTransactions(prev => {
+        // Prevent duplicates
+        if (prev.some(tx => tx.hash === transaction.hash)) return prev;
+        return [newTx, ...prev];
+      });
       
       setFormData({ recipient: '', amount: '', token: 'USDC' });
       setTimeout(resetTransaction, 5000);
@@ -101,7 +104,7 @@ export const SendTokenForm: React.FC = () => {
       toast.error(transaction.error || 'Transaction failed');
       setTimeout(resetTransaction, 5000);
     }
-  }, [transaction.status, transaction.hash, transaction.error, resetTransaction, formData, setTransactions]);
+  }, [transaction.status, transaction.hash]);
 
   return (
     <div className="space-y-4 max-w-md">
@@ -123,9 +126,11 @@ export const SendTokenForm: React.FC = () => {
         <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
           <h4 className="text-sm font-medium text-gray-800 mb-2">Gas Estimate</h4>
           <div className="text-xs text-gray-600 space-y-1">
-            <p>Gas Limit: {gasEstimate.gasLimit?.toString()}</p>
-            <p>Gas Price: {ethers.formatUnits(gasEstimate.gasPrice || 0, 'gwei')} gwei</p>
-            <p>Total Cost: ~{ethers.formatEther(gasEstimate.totalCost || 0)} ETH</p>
+            <p>Gas Limit: {gasEstimate.legacy?.gasLimit?.toString()}</p>
+            <p>Legacy Gas Price: {ethers.formatUnits(gasEstimate.legacy?.gasPrice || 0, 'gwei')} gwei</p>
+            <p>Legacy Total: ~{ethers.formatEther(gasEstimate.legacy?.totalCost || 0)} ETH</p>
+            <p className="text-gray-500">EIP-1559: Not supported on Sepolia</p>
+            <p className="text-blue-600">✓ Will use Legacy pricing for transaction</p>
           </div>
         </div>
       )}
@@ -136,6 +141,7 @@ export const SendTokenForm: React.FC = () => {
           <select
             value={formData.token}
             onChange={(e) => setFormData({ ...formData, token: e.target.value })}
+            onBlur={handleInputBlur}
             className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
           >
             {AVAILABLE_TOKENS.map((token) => (
@@ -152,6 +158,7 @@ export const SendTokenForm: React.FC = () => {
             type="text"
             value={formData.recipient}
             onChange={(e) => setFormData({ ...formData, recipient: e.target.value })}
+            onBlur={handleInputBlur}
             placeholder="0x..."
             className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
           />
@@ -164,6 +171,7 @@ export const SendTokenForm: React.FC = () => {
             type="text"
             value={formData.amount}
             onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+            onBlur={handleInputBlur}
             placeholder="0.00"
             className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
           />
